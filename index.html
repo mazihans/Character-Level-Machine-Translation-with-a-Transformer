@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Svenska till Engelska Översättare</title>
+    <!-- Vi laddar in Pyodide från ett publikt CDN -->
+    <!-- <script src="https://jsdelivr.net"></script> -->
+    <!-- <script src="https://cdn.jsdelivr.net/pyodide/v0.28.0/full/pyodide.js"></script> -->
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        h1 { color: #2c3e50; text-align: center; }
+        textarea {
+            width: 100%;
+            height: 100px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            resize: vertical;
+            font-size: 16px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: #3498db;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 10px;
+            transition: background 0.2s;
+        }
+        button:hover { background-color: #2980b9; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        #status {
+            text-align: center;
+            font-style: italic;
+            color: #7f8c8d;
+            margin: 15px 0;
+        }
+        #output-container {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #fff;
+            border-left: 5px solid #2ecc71;
+            border-radius: 4px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        #output { font-size: 18px; font-weight: 500; }
+    </style>
+</head>
+<body>
+
+    <h1>Svenska ➔ Engelska</h1>
+    <div id="status">Startar Python i webbläsaren (detta kan ta några sekunder)...</div>
+    
+    <textarea id="inputtext" placeholder="Skriv en kort svensk mening här..." disabled></textarea>
+    <button id="translate-btn" onclick="runTranslation()" disabled>Översätt</button>
+
+    <div id="output-container">
+        <strong>Översättning:</strong>
+        <p id="output">...</p>
+    </div>
+
+    <script>
+        let pyodideInstance;
+        let translateFunc;
+
+        async function initPyodide() {
+            const statusDiv = document.getElementById("status");
+            try {
+                // 1. Starta Pyodide-miljön
+                pyodideInstance = await window.loadPyodide();
+                statusDiv.innerText = "Laddar in NumPy...";
+                
+                // 2. Installera NumPy i webbläsaren
+                await pyodideInstance.loadPackage("numpy");
+                statusDiv.innerText = "Laddar modellfiler...";
+
+                // 3. Hämta dina lokala filer in i Pyodides virtuella filsystem
+                const files = ["model_np.py", "weights.npz", "pico_translator.vocab"];
+                for (const file of files) {
+                    const response = await fetch(file);
+                    const buffer = await response.arrayBuffer();
+                    pyodideInstance.FS.writeFile(file, new Uint8Array(buffer));
+                }
+
+                statusDiv.innerText = "Initierar översättaren...";
+                
+                // 4. Importera din Python-kod och kör load()
+                await pyodideInstance.runPythonAsync(`
+                    import sys
+                    import model_np
+                    translate_fn = model_np.load()
+                `);
+
+                // Spara referensen till translate-funktionen i JavaScript
+                translateFunc = pyodideInstance.globals.get("translate_fn");
+
+                statusDiv.innerText = "Modellen är redo!";
+                document.getElementById("inputtext").disabled = false;
+                document.getElementById("translate-btn").disabled = false;
+            } catch (err) {
+                statusDiv.innerText = "Ett fel uppstod vid laddning: " + err;
+                console.error(err);
+            }
+        }
+
+        async function runTranslation() {
+            const text = document.getElementById("inputtext").value;
+            const outputParagraph = document.getElementById("output");
+            if (!text.trim()) return;
+
+            outputParagraph.innerText = "Översätter...";
+            
+            // Kör din Python-funktion med texten som argument
+            try {
+                const result = translateFunc(text);
+                outputParagraph.innerText = result;
+            } catch (err) {
+                outputParagraph.innerText = "Fel vid översättning: " + err;
+            }
+        }
+
+        // Starta laddningen direkt när sidan öppnas
+        window.addEventListener('load', initPyodide);
+    </script>
+</body>
+</html>
